@@ -12,8 +12,7 @@ from sqlalchemy import create_engine, Column, Integer, String, Float, Index, For
 from sqlalchemy.sql.expression import asc, desc
 from sqlalchemy.orm import sessionmaker, relationship
 from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.ext.hybrid import hybrid_property, hybrid_method
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy.ext.hybrid import hybrid_property
 
 # base class for ORM objects
 Base = declarative_base()
