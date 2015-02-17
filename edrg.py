@@ -20,9 +20,9 @@ Base = declarative_base()
 
 
 @contextmanager
-def session_scope():
+def session_scope(session_class):
     """Provide a transactional scope around a series of operations."""
-    session = Session()
+    session = session_class()
     try:
         yield session
         session.commit()
@@ -31,20 +31,6 @@ def session_scope():
         raise
     finally:
         session.close()
-
-
-def initialize_db(wipe=False):
-    if wipe and os.path.isfile('edrg.sqlite'):
-        os.remove('edrg.sqlite')
-
-    global engine
-    global Session
-    engine = create_engine('sqlite:///edrg.sqlite', echo=False)
-    Session = sessionmaker(bind=engine)
-
-    if wipe:
-        Base.metadata.create_all(engine)
-        import_data_from_excel()
 
 
 class System(Base):
@@ -58,14 +44,8 @@ class System(Base):
 
     stations = relationship("Station", backref="system")
 
-#	@hybrid_method
     def distanceTo(self, other):
         return (((self.x - other.x) ** 2) + ((self.y - other.y) ** 2) + ((self.z - other.z) ** 2)) ** .5
-
-# @distanceTo.expression      # THIS DOESN'T WORK BECAUSE SQLITE DOESN'T HAVE THE POWER() FUNCTION
-#	def distanceTo(cls, other):
-# return
-# func.power(func.power(cls.x-other.x,2)+func.power(cls.y-other.y,2)+func.power(cls.z-other.z,2),.5)
 
     @classmethod
     def import_(cls, sheet, session):
@@ -335,36 +315,111 @@ if __name__ == '__main__':
 
     parser = argparse.ArgumentParser(
         description="Work with the Elite Dangerous Rare Goods")
-    parser.add_argument('-w', '--wipe', action='store_true', default=False,
-                        help="Wipe the database and recreate it from scratch from the spreadsheet")
-    parser.add_argument('-c', '--count', action='store_true', default=False,
-                        help="Return the number of goods meeting the specified criteria")
-    parser.add_argument('-d', '--display', action='store_true', default=False,
-                        help="Display the names of all goods meeting the specified criteria")
-    parser.add_argument('-o', '--optimize', action='store_true', default=False,
-                        help="Compute and display the optimal route given the specified criteria")
-    parser.add_argument('--optimize-outputs', action='store', default=1, type=int, metavar='N',
-                        help="Modifies --optimize: show the top N optimization outputs. Default 1")
-    parser.add_argument('--max-dist', action='store', type=int,
-                        help="Modifies --optimize: the maximal distance you'll accept for a route")
-    parser.add_argument('--limit-cargo', action='store', type=int, metavar='C',
-                        help="Modifies --optimize: calculate using at most C units of cargo, if the expected supply is greater")
-    parser.add_argument('-l', '--limit', action='store', default=-1, type=int, metavar='N',
-                        help="Limit to the first N SQL results. This happens before optimization!")
-    parser.add_argument('-f', '--filter', action='append', default=[],
-                        help="Raw SQLAlchemy filter strings. You have access to Goods, Station, and System.")
-    parser.add_argument('-s', '--sort', action='store',
-                        help="Raw SQLAlchemy order_by string. Sorts descending by default. You have access to Goods, Station, and System.")
-    parser.add_argument('-a', '--ascending', action='store_true', default=False,
-                        help="Modifies --sort to produce an ascending sort instead.")
+    parser.add_argument(
+        '-w',
+        '--wipe',
+        action='store_true',
+        default=False,
+        help="Wipe the database and recreate it from scratch from the spreadsheet"
+    )
+
+    parser.add_argument(
+        '-c',
+        '--count',
+        action='store_true',
+        default=False,
+        help="Return the number of goods meeting the specified criteria"
+    )
+
+    parser.add_argument(
+        '-d',
+        '--display',
+        action='store_true',
+        default=False,
+        help="Display the names of all goods meeting the specified criteria"
+    )
+
+    parser.add_argument(
+        '-o',
+        '--optimize',
+        action='store_true',
+        default=False,
+        help="Compute and display the optimal route given the specified criteria"
+    )
+
+    parser.add_argument(
+        '--optimize-outputs',
+        action='store',
+        default=1,
+        type=int,
+        metavar='N',
+        help="Modifies --optimize: show the top N optimization outputs. Default 1"
+    )
+
+    parser.add_argument(
+        '--max-dist',
+        action='store',
+        type=int,
+        help="Modifies --optimize: the maximal distance you'll accept for a route"
+    )
+
+    parser.add_argument(
+        '--limit-cargo',
+        action='store',
+        type=int,
+        metavar='C',
+        help="Modifies --optimize: calculate using at most C units of cargo, if the expected supply is greater"
+    )
+
+    parser.add_argument(
+        '-l',
+        '--limit',
+        action='store',
+        default=-1,
+        type=int,
+        metavar='N',
+        help="Limit to the first N SQL results. This happens before optimization!"
+    )
+
+    parser.add_argument(
+        '-f',
+        '--filter',
+        action='append',
+        default=[],
+        help="Raw SQLAlchemy filter strings. You have access to Goods, Station, and System."
+    )
+
+    parser.add_argument(
+        '-s',
+        '--sort',
+        action='store',
+        help="Raw SQLAlchemy order_by string. Sorts descending by default. You have access to Goods, Station, and System."
+    )
+
+    parser.add_argument(
+        '-a',
+        '--ascending',
+        action='store_true',
+        default=False,
+        help="Modifies --sort to produce an ascending sort instead."
+    )
 
     ns = parser.parse_args()
 
     if not any([ns.wipe, ns.count, ns.display, ns.optimize]):
         parser.print_help()
     else:
-        initialize_db(ns.wipe)
-        with session_scope() as session:
+        if ns.wipe and os.path.isfile('edrg.sqlite'):
+            os.remove('edrg.sqlite')
+
+        engine = create_engine('sqlite:///edrg.sqlite', echo=False)
+        Session = sessionmaker(bind=engine)
+
+        if ns.wipe:
+            Base.metadata.create_all(engine)
+            import_data_from_excel()
+
+        with session_scope(Session) as session:
             q = session.query(Goods).join(Station).join(System)
 
             # filters need to be eval'd for hybrid properties to work. Do it
